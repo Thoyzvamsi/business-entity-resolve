@@ -13,7 +13,25 @@ do not need to read the rest of this file or the whole repo to do your job.
    depends on a file that doesn't exist yet, stop and say so instead of creating it
    yourself out of order.
 
-2. **Modularity contract — no direct swaps without an interface.**
+2. **Ground every phase in the actual repo, not the plan.** Section 2's tree is the
+   *target end-state*, not a claim about what exists right now. Before writing any
+   code, inspect the real current layout yourself (`ls -R`, `find . -maxdepth 4`, or
+   `git ls-files`) instead of asking the user to describe it or assuming Section 2 is
+   already true. Known deviations from the target tree as of this writing:
+   - The challenge data actually lives under `student_resource/dataset/{train,test}/`,
+     not a top-level `dataset/` — use the real path.
+   - `pyproject.toml` already exists at repo root (dependency management is
+     pyproject-based, not a bare `requirements.txt` — Phase 8 should update
+     `pyproject.toml`, not create a separate `requirements.txt`, unless the user says
+     otherwise).
+   - `utils/validate_submission.py`, `README.md`, `Documentation_template.md`, and
+     `.gitignore` are already present and provided by the challenge — never overwrite
+     `validate_submission.py`.
+   - This spec file (`AGENT_BUILD_SPEC.md`) sits at repo root, not inside `src/`.
+   If the repo has moved on further since this file was last read, trust what you
+   observe in the filesystem over what this section says.
+
+3. **Modularity contract — no direct swaps without an interface.**
    - Any blocking strategy implements `BaseBlocker` (`src/blocking/base.py`).
    - Any ML classifier implements `BaseMatcher` (`src/models/base_matcher.py`).
    - Only `src/models/__init__.py`'s registry and `src/config.py`'s `MODEL_TYPE` /
@@ -25,7 +43,7 @@ do not need to read the rest of this file or the whole repo to do your job.
    - Test of correctness: swapping `MODEL_TYPE = "lightgbm"` → `"xgboost"` in
      `config.py` alone should retrain and run inference with zero other file edits.
 
-3. **Accuracy is not optional — every phase that touches predictions must score itself.**
+4. **Accuracy is not optional — every phase that touches predictions must score itself.**
    - Any phase that produces matches, candidates, or probabilities must run the
      relevant scorer (`src/evaluation/recall_scorer.py` for blocking,
      `src/evaluation/f05_scorer.py` for final/validation matches) and print the number
@@ -35,7 +53,7 @@ do not need to read the rest of this file or the whole repo to do your job.
    - If a phase changes anything upstream (blocking, features, model), re-run
      `f05_scorer.py` on the validation split before touching the next phase.
 
-4. **Token economy — spend tokens only where they buy accuracy or safety.**
+5. **Token economy — spend tokens only where they buy accuracy or safety.**
    - Before starting a phase: read only `PROGRESS.md`, this spec's section for that
      phase, and the interface files (`base_matcher.py`, `base.py`, `config.py`). Do not
      re-read the full repo or prior phases' full source.
@@ -47,7 +65,7 @@ do not need to read the rest of this file or the whole repo to do your job.
    - Phase 7 (embeddings) is the expensive phase — confirm with the user before
      running it, and only after Phase 6 shows a measured need.
 
-5. **Documentation & readability.**
+6. **Documentation & readability.**
    - Every function: type hints + a one-line Google-style docstring (what it does,
      not how).
    - No function over ~40 lines; one responsibility per function.
@@ -176,9 +194,12 @@ command**, **Accuracy check**, **Done when**, **PROGRESS.md line to append**.
 
 ### Phase 0 — Skeleton + EDA
 - **Goal:** Understand the data before writing any logic.
-- **Build:** `src/config.py` (paths only for now), `src/data_loader.py` (load all 6
-  tsvs with `sep="\t"`), `src/eda.py` (schema, null rates, country distribution,
-  ground-truth singleton rate, name-length stats).
+- **First action:** run `ls -R student_resource` (or `find student_resource -maxdepth 4`)
+  to confirm real file paths before hard-coding any in `config.py`.
+- **Build:** `src/config.py` (real paths — data lives under
+  `student_resource/dataset/{train,test}/`, not a top-level `dataset/`),
+  `src/data_loader.py` (load all 6 tsvs with `sep="\t"`), `src/eda.py` (schema, null
+  rates, country distribution, ground-truth singleton rate, name-length stats).
 - **Read:** nothing but the README — this phase has no dependencies.
 - **Test:** `python -m src.eda` runs clean, prints summary.
 - **Accuracy check:** N/A (no predictions yet).
@@ -266,8 +287,10 @@ command**, **Accuracy check**, **Done when**, **PROGRESS.md line to append**.
 - **PROGRESS.md:** `Phase 7 DONE/REVERTED — recall X→Y, F_0.5 X→Y.`
 
 ### Phase 8 — Packaging
-- **Build:** `requirements.txt` (pinned versions), `code/business_entity_resolution/README.md`
-  (exact run instructions data→output), fill `Documentation_template.md`.
+- **Build:** pin dependency versions in the existing `pyproject.toml` (don't create a
+  separate `requirements.txt` unless the challenge submission format requires one —
+  check the README first), `code/business_entity_resolution/README.md` (exact run
+  instructions data→output), fill `Documentation_template.md`.
 - **Read:** nothing — this is assembly, not logic.
 - **Test:** fresh venv + clone reproduces both output files from raw data alone.
 - **Accuracy check:** final F_0.5 from Phase 4/5/7 restated in the doc, matches the
