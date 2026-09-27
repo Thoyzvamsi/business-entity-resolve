@@ -30,6 +30,9 @@ do not need to read the rest of this file or the whole repo to do your job.
    - This spec file (`AGENT_BUILD_SPEC.md`) sits at repo root, not inside `src/`.
    If the repo has moved on further since this file was last read, trust what you
    observe in the filesystem over what this section says.
+   - Challenge TSVs are very large and can crash VS Code when opened directly. Do not
+     open files under `student_resource/dataset/` in the editor; inspect them from the
+     terminal using commands or Python chunked reads instead.
 
 3. **Modularity contract — no direct swaps without an interface.**
    - Any blocking strategy implements `BaseBlocker` (`src/blocking/base.py`).
@@ -59,8 +62,19 @@ do not need to read the rest of this file or the whole repo to do your job.
      re-read the full repo or prior phases' full source.
    - Prefer diffs/edits over reprinting whole files in chat. Only show full file
      contents when creating a brand-new file or when a bug requires it.
-   - Cache expensive artifacts (`candidate_pairs.tsv`, `features.parquet`). Check if
-     the output already exists and is newer than its inputs before recomputing.
+   - Cache expensive artifacts (`candidate_pairs.tsv`, `features.parquet`) and
+     blocking indexes under `output/cache/blocking/`. A blocker index cache key must
+     include the source file identity (`mtime_ns` and size or a content hash), split,
+     source, strategy name, and key-generation configuration/version. Never key it by
+     the candidate output filename; changing output names must reuse the same index.
+   - Every index lookup prints either `[CACHE HIT] Loaded <strategy> index for
+     <source> (built <timestamp>)` or `[CACHE MISS] Building <strategy> index for
+     <source>`. Keep cache files out of Git.
+   - Before any full-data blocking run, pass a small fixture test that generates to
+     two different output filenames and visibly prints at least one `CACHE HIT`. If
+     that check fails, stop before reading the full dataset.
+   - Check whether other expensive outputs already exist and are newer than their
+     inputs before recomputing them.
    - Summarize test/scoring output in 2–3 lines. Don't paste full logs unless asked.
    - Phase 7 (embeddings) is the expensive phase — confirm with the user before
      running it, and only after Phase 6 shows a measured need.
@@ -73,6 +87,26 @@ do not need to read the rest of this file or the whole repo to do your job.
      never do (e.g. "never call an ML library directly — see BaseMatcher").
    - Config values (paths, thresholds, hyperparams) live only in `src/config.py` —
      never hard-coded inline elsewhere.
+
+7. **Recover from expensive-run errors; don't blindly repeat work.**
+   - Before any full-dataset or otherwise expensive run, pass the relevant syntax,
+     import, and focused behavior checks. Confirm required inputs and output paths.
+   - If an expensive run fails, inspect and fix the reported failure, then rerun the
+     focused check that covers that failure before launching another full run.
+   - Preserve successful stage outputs and checkpoints; rerun only the failed stage.
+     Invalidate cached indexes only when their input identity or key-generation
+     configuration/version changes. Report stage progress and preserve useful logs.
+
+8. **Training must be checkpointable and resumable.**
+   - Training pipelines must save model weights and the state required to continue
+     training (such as iteration/round, optimizer state when applicable, random
+     state, model type, and feature schema) at configured checkpoints.
+   - Provide an explicit resume option that loads the latest valid checkpoint and
+     continues from its recorded training state; reject incompatible checkpoints
+     with a clear error instead of silently starting over.
+   - Write checkpoints atomically and retain the last known-good checkpoint if a
+     save or training run fails. Verify resume behavior with a small interrupted /
+     resumed test before running full training.
 
 ---
 
@@ -209,7 +243,8 @@ command**, **Accuracy check**, **Done when**, **PROGRESS.md line to append**.
 
 ### Phase 1 — Blocking interface + strategies
 - **Build:** `src/blocking/base.py`, `name_blocking.py`, `phonetic_blocking.py`,
-  `tokenset_blocking.py`, `union.py` → writes `candidate_pairs.tsv` (train split).
+  `tokenset_blocking.py`, `address_blocking.py`, `union.py` → writes
+  `candidate_pairs.tsv` (train split).
 - **Read:** `config.py`, `data_loader.py` output shape only.
 - **Test:** `python -m src.blocking.union --split train`
 - **Accuracy check:** `src/evaluation/recall_scorer.py` — recall =
@@ -231,12 +266,14 @@ command**, **Accuracy check**, **Done when**, **PROGRESS.md line to append**.
 ### Phase 3 — Baseline matcher (LightGBM via BaseMatcher)
 - **Build:** `src/models/base_matcher.py`, `lightgbm_matcher.py`, `__init__.py`
   registry, `src/pipeline/run_train_pipeline.py` (entity-level train/val split —
-  split by `source1_entity_id`, never by row, to avoid leakage).
+  split by `source1_entity_id`, never by row, to avoid leakage; save checkpoints and
+  support resuming training from the last valid checkpoint).
 - **Read:** `features.parquet` schema, `base_matcher.py` interface only.
 - **Test:** `python -m src.pipeline.run_train_pipeline` — trains, saves `model.pkl`,
   reloads it, scores a batch without error.
 - **Accuracy check:** print validation AUC / PR-AUC.
-- **Done when:** model round-trips (save→load→predict) correctly.
+- **Done when:** model round-trips (save→load→predict) correctly and an interrupted
+  training run resumes from its saved checkpoint rather than restarting at iteration 0.
 - **PROGRESS.md:** `Phase 3 DONE — LightGBM, val PR-AUC X.`
 
 ### Phase 4 — Singleton-aware thresholding + official scorer

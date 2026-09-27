@@ -1,1 +1,26 @@
 *.tsv
+
+# Python bytecode and test/tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments and operating-system metadata
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+
+# Temporary blocking and merge databases
+*.sqlite
+*.sqlite3
+*.db
+*-wal
+*-shm
+*-journal
+output/ber-blocking-*/
+output/ber-merge-*/

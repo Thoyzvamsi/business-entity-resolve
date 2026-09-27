@@ -1,0 +1,9 @@
+{
+  "files.watcherExclude": {
+    "**/student_resource/dataset/**": true
+  },
+  "search.exclude": {
+    "**/student_resource/dataset/**": true
+  },
+  "workbench.editor.enablePreview": false
+}
